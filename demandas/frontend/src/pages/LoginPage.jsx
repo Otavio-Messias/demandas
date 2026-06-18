@@ -78,9 +78,6 @@ export default function LoginPage() {
           marginTop: 24, padding: '14px', background: '#f8f9fb',
           borderRadius: 8, fontSize: 12, color: 'var(--text-3)'
         }}>
-          <strong style={{ color: 'var(--text-2)' }}>Acesso demo:</strong><br />
-          Admin: admin@empresa.com / admin123<br />
-          Usuário: selma@empresa.com / senha123
         </div>
       </div>
     </div>
