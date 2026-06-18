@@ -34,7 +34,6 @@ export default function BoardPage() {
     }
   }, [loadTasks, isAdmin]);
 
-  // Count active tasks per user (excluding Concluída and Cancelada)
   const taskCountByUser = users.reduce((acc, u) => {
     acc[u.id] = tasks.filter(t =>
       t.assignee_id === u.id &&
@@ -61,7 +60,7 @@ export default function BoardPage() {
   const selectedUser = users.find(u => u.id === parseInt(userFilter));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', maxWidth: '100vw' }}>
       <Navbar tasks={tasks} />
 
       {/* Toolbar */}
@@ -70,7 +69,6 @@ export default function BoardPage() {
         padding: '12px 20px',
         background: 'white', borderBottom: '1px solid var(--border)',
       }}>
-        {/* Search */}
         <div style={{ position: 'relative', flex: 1, minWidth: 160, maxWidth: 260 }}>
           <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', fontSize: 14 }}>🔍</span>
           <input
@@ -82,7 +80,6 @@ export default function BoardPage() {
           />
         </div>
 
-        {/* Priority filter */}
         <select
           className="form-select"
           value={priorityFilter}
@@ -96,7 +93,6 @@ export default function BoardPage() {
           <option>Urgente</option>
         </select>
 
-        {/* User filter (admin only) */}
         {isAdmin && users.length > 0 && (
           <select
             className="form-select"
@@ -164,16 +160,24 @@ export default function BoardPage() {
         <div className="loading">Carregando tarefas...</div>
       ) : (
         <div style={{
-          flex: 1, overflowX: 'auto', overflowY: 'hidden',
+          flex: 1,
+          overflowX: 'auto',
+          overflowY: 'hidden',
           padding: '16px 20px',
-          display: 'flex', gap: 12,
+          display: 'flex',
+          gap: 12,
+          minWidth: 0,
+          width: '100%',
         }}>
           {columns.map(col => (
             <div key={col.key} style={{
-              flexShrink: 0, width: 280,
-              display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '100%',
+              flexShrink: 0,
+              width: 280,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              maxHeight: '100%',
             }}>
-              {/* Column header */}
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '8px 12px', background: 'white',
@@ -192,7 +196,6 @@ export default function BoardPage() {
                 </span>
               </div>
 
-              {/* Cards */}
               <div style={{
                 flex: 1, overflowY: 'auto',
                 display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 4
@@ -217,7 +220,6 @@ export default function BoardPage() {
                 )}
               </div>
 
-              {/* Add button */}
               <button
                 className="btn btn-ghost"
                 onClick={() => setShowForm(true)}
