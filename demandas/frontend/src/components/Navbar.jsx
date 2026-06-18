@@ -25,7 +25,6 @@ export default function Navbar({ tasks = [] }) {
         display: 'flex', alignItems: 'center', gap: 16,
         padding: '0 20px', height: 52,
       }}>
-        {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <div style={{
             width: 28, height: 28, background: '#111827',
@@ -37,7 +36,6 @@ export default function Navbar({ tasks = [] }) {
 
         <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
 
-        {/* Stats */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 13, color: 'var(--text-2)' }}>
             Total <strong style={{ color: 'var(--text)' }}>{total}</strong>
@@ -61,7 +59,6 @@ export default function Navbar({ tasks = [] }) {
 
         <div style={{ flex: 1 }} />
 
-        {/* Nav links (admin) */}
         {user?.role === 'admin' && (
           <nav style={{ display: 'flex', gap: 4 }}>
             <button
@@ -75,7 +72,6 @@ export default function Navbar({ tasks = [] }) {
           </nav>
         )}
 
-        {/* User menu */}
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
@@ -100,23 +96,23 @@ export default function Navbar({ tasks = [] }) {
 
           {menuOpen && (
             <>
-              <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={() => setMenuOpen(false)} />
+              <div style={{ position: 'fixed', inset: 0, zIndex: 200 }} onClick={() => setMenuOpen(false)} />
               <div style={{
                 position: 'absolute', right: 0, top: '110%',
                 background: 'white', border: '1px solid var(--border)',
-                borderRadius: 10, boxShadow: 'var(--shadow-md)',
-                minWidth: 160, overflow: 'hidden', zIndex: 20
+                borderRadius: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                minWidth: 160, overflow: 'hidden', zIndex: 201
               }}>
-                <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-light)' }}>
+                <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0f1f3' }}>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{user?.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{user?.email}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>{user?.email}</div>
                 </div>
                 <button
                   onClick={() => { logout(); setMenuOpen(false); }}
                   style={{
                     width: '100%', padding: '10px 14px', background: 'none',
                     border: 'none', cursor: 'pointer', textAlign: 'left',
-                    fontSize: 13, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 8
+                    fontSize: 13, color: '#dc2626'
                   }}
                 >
                   Sair
