@@ -37,7 +37,7 @@ export default function LoginPage() {
             borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 16px', fontSize: 20
           }}>📋</div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Demandas</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Demandas Central</h1>
           <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Faça login para continuar</p>
         </div>
 

@@ -32,7 +32,7 @@ export default function Navbar({ tasks = [] }) {
             borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 14
           }}>📋</div>
-          <span style={{ fontWeight: 700, fontSize: 15 }}>Demandas</span>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>Demandas Central</span>
         </div>
 
         <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
