@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from '../components/Navbar';
 import TaskCard from '../components/TaskCard';
 import TaskForm from '../components/TaskForm';
@@ -20,6 +20,13 @@ export default function BoardPage() {
   const [showForm, setShowForm] = useState(false);
   const [detailId, setDetailId] = useState(null);
 
+  // Drag state
+  const dragTaskId = useRef(null);
+  const dragOverTaskId = useRef(null);
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const saveTimeout = useRef(null);
+
   const loadTasks = useCallback(() => {
     api.get('/tasks').then(r => {
       setTasks(r.data);
@@ -34,7 +41,6 @@ export default function BoardPage() {
     }
   }, [loadTasks, isAdmin]);
 
-  // Count active tasks per user (excluding Concluída and Cancelada)
   const taskCountByUser = users.reduce((acc, u) => {
     acc[u.id] = tasks.filter(t =>
       t.assignee_id === u.id &&
@@ -60,8 +66,87 @@ export default function BoardPage() {
   const pendingApproval = tasks.filter(t => t.status === 'Aguardando aceite').length;
   const selectedUser = users.find(u => u.id === parseInt(userFilter));
 
+  // --- Drag and Drop handlers ---
+  const handleDragStart = (e, taskId) => {
+    dragTaskId.current = taskId;
+    setDraggingId(taskId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e, taskId) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (taskId !== dragOverTaskId.current) {
+      dragOverTaskId.current = taskId;
+      setDragOverId(taskId);
+    }
+  };
+
+  const handleDragEnd = () => {
+    const fromId = dragTaskId.current;
+    const toId = dragOverTaskId.current;
+
+    if (!fromId || !toId || fromId === toId) {
+      dragTaskId.current = null;
+      dragOverTaskId.current = null;
+      setDraggingId(null);
+      setDragOverId(null);
+      return;
+    }
+
+    // Find which column both tasks belong to
+    const fromTask = tasks.find(t => t.id === fromId);
+    const toTask = tasks.find(t => t.id === toId);
+
+    if (!fromTask || !toTask || fromTask.status !== toTask.status) {
+      dragTaskId.current = null;
+      dragOverTaskId.current = null;
+      setDraggingId(null);
+      setDragOverId(null);
+      return;
+    }
+
+    // Reorder tasks in that column
+    const colTasks = tasks.filter(t => t.status === fromTask.status);
+    const fromIndex = colTasks.findIndex(t => t.id === fromId);
+    const toIndex = colTasks.findIndex(t => t.id === toId);
+
+    const reordered = [...colTasks];
+    reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, fromTask);
+
+    // Apply new order to full tasks list
+    const newTasks = tasks.map(t => {
+      const idx = reordered.findIndex(r => r.id === t.id);
+      if (idx !== -1) return { ...t, position: idx + 1 };
+      return t;
+    });
+
+    setTasks(newTasks);
+
+    // Debounce save to backend
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(() => {
+      // Get full ordered IDs of this column in new order
+      const colIds = newTasks
+        .filter(t => t.status === fromTask.status)
+        .sort((a, b) => a.position - b.position)
+        .map(t => t.id);
+
+      api.post('/tasks/reorder', { orderedIds: colIds }).catch(() => {
+        // If save fails, reload from server
+        loadTasks();
+      });
+    }, 600);
+
+    dragTaskId.current = null;
+    dragOverTaskId.current = null;
+    setDraggingId(null);
+    setDragOverId(null);
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', maxWidth: '100vw' }}>
       <Navbar tasks={tasks} />
 
       {/* Toolbar */}
@@ -70,7 +155,6 @@ export default function BoardPage() {
         padding: '12px 20px',
         background: 'white', borderBottom: '1px solid var(--border)',
       }}>
-        {/* Search */}
         <div style={{ position: 'relative', flex: 1, minWidth: 160, maxWidth: 260 }}>
           <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', fontSize: 14 }}>🔍</span>
           <input
@@ -82,7 +166,6 @@ export default function BoardPage() {
           />
         </div>
 
-        {/* Priority filter */}
         <select
           className="form-select"
           value={priorityFilter}
@@ -96,7 +179,6 @@ export default function BoardPage() {
           <option>Urgente</option>
         </select>
 
-        {/* User filter (admin only) */}
         {isAdmin && users.length > 0 && (
           <select
             className="form-select"
@@ -167,6 +249,7 @@ export default function BoardPage() {
           flex: 1, overflowX: 'auto', overflowY: 'hidden',
           padding: '16px 20px',
           display: 'flex', gap: 12,
+          minWidth: 0, width: '100%',
         }}>
           {columns.map(col => (
             <div key={col.key} style={{
@@ -207,12 +290,29 @@ export default function BoardPage() {
                   </div>
                 ) : (
                   col.tasks.map(task => (
-                    <TaskCard
+                    <div
                       key={task.id}
-                      task={task}
-                      showAssignee={userFilter === 'todos'}
-                      onClick={t => setDetailId(t.id)}
-                    />
+                      draggable
+                      onDragStart={e => handleDragStart(e, task.id)}
+                      onDragOver={e => handleDragOver(e, task.id)}
+                      onDragEnd={handleDragEnd}
+                      style={{
+                        opacity: draggingId === task.id ? 0.4 : 1,
+                        transform: dragOverId === task.id && draggingId !== task.id
+                          ? 'translateY(-3px)' : 'none',
+                        transition: 'transform 0.1s, opacity 0.1s',
+                        cursor: 'grab',
+                        outline: dragOverId === task.id && draggingId !== task.id
+                          ? `2px solid ${col.color}` : 'none',
+                        borderRadius: 10,
+                      }}
+                    >
+                      <TaskCard
+                        task={task}
+                        showAssignee={userFilter === 'todos'}
+                        onClick={t => setDetailId(t.id)}
+                      />
+                    </div>
                   ))
                 )}
               </div>

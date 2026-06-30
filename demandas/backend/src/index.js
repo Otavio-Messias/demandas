@@ -57,6 +57,7 @@ async function initDB() {
         checklist JSONB DEFAULT '[]'::jsonb,
         recurrence TEXT,
         recurrence_parent_id INTEGER,
+        position INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
@@ -79,6 +80,18 @@ async function initDB() {
     // Migração: adiciona colunas de recorrência
     await query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT`);
     await query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence_parent_id INTEGER`);
+
+    // Migração: adiciona coluna de posição para ordenação manual
+    await query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS position INTEGER DEFAULT 0`);
+    // Inicializa position com base na data de criação para tarefas existentes
+    await query(`
+      UPDATE tasks SET position = sub.row_num
+      FROM (
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY status ORDER BY created_at ASC) as row_num
+        FROM tasks WHERE position = 0 OR position IS NULL
+      ) sub
+      WHERE tasks.id = sub.id AND (tasks.position = 0 OR tasks.position IS NULL)
+    `);
 
     // Cria admin se não existir
     const admins = await query("SELECT id FROM users WHERE email = 'admin@empresa.com'");

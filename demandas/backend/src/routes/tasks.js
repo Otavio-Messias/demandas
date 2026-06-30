@@ -38,7 +38,7 @@ router.get('/', authMiddleware, async (req, res) => {
       JOIN users u ON t.assignee_id = u.id
       JOIN users creator ON t.created_by = creator.id
       ${isAdmin ? '' : 'WHERE t.assignee_id = $1 OR t.created_by = $1'}
-      ORDER BY t.created_at DESC
+      ORDER BY t.position ASC, t.created_at ASC
     `;
     res.json(isAdmin ? await query(sql) : await query(sql, [req.user.id]));
   } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
@@ -154,6 +154,23 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
 
     res.json(await queryOne('SELECT * FROM tasks WHERE id = $1', [task.id]));
+  } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
+});
+
+// POST /api/tasks/reorder — salva nova ordem após drag and drop
+router.post('/reorder', authMiddleware, async (req, res) => {
+  try {
+    // orderedIds: array de IDs na nova ordem [ 5, 2, 8, 1, ... ]
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds deve ser um array' });
+
+    // Atualiza position de cada tarefa em paralelo
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        query('UPDATE tasks SET position=$1, updated_at=NOW() WHERE id=$2', [index + 1, id])
+      )
+    );
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
 });
 
