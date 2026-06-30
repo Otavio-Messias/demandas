@@ -21,11 +21,10 @@ export default function BoardPage() {
   const [detailId, setDetailId] = useState(null);
 
   // Drag state
-  const dragTaskId = useRef(null);
-  const dragOverTaskId = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
-  const [dragOverId, setDragOverId] = useState(null);
-  const saveTimeout = useRef(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState(null);
+  const [dragOverColumn, setDragOverColumn] = useState(null);
+  const draggingIdRef = useRef(null);
 
   const loadTasks = useCallback(() => {
     api.get('/tasks').then(r => {
@@ -66,83 +65,118 @@ export default function BoardPage() {
   const pendingApproval = tasks.filter(t => t.status === 'Aguardando aceite').length;
   const selectedUser = users.find(u => u.id === parseInt(userFilter));
 
-  // --- Drag and Drop handlers ---
+  // ---- Drag and Drop ----
+
   const handleDragStart = (e, taskId) => {
-    dragTaskId.current = taskId;
+    draggingIdRef.current = taskId;
     setDraggingId(taskId);
     e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e, taskId) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (taskId !== dragOverTaskId.current) {
-      dragOverTaskId.current = taskId;
-      setDragOverId(taskId);
-    }
+    e.dataTransfer.setData('text/plain', String(taskId));
   };
 
   const handleDragEnd = () => {
-    const fromId = dragTaskId.current;
-    const toId = dragOverTaskId.current;
-
-    if (!fromId || !toId || fromId === toId) {
-      dragTaskId.current = null;
-      dragOverTaskId.current = null;
-      setDraggingId(null);
-      setDragOverId(null);
-      return;
-    }
-
-    // Find which column both tasks belong to
-    const fromTask = tasks.find(t => t.id === fromId);
-    const toTask = tasks.find(t => t.id === toId);
-
-    if (!fromTask || !toTask || fromTask.status !== toTask.status) {
-      dragTaskId.current = null;
-      dragOverTaskId.current = null;
-      setDraggingId(null);
-      setDragOverId(null);
-      return;
-    }
-
-    // Reorder tasks in that column
-    const colTasks = tasks.filter(t => t.status === fromTask.status);
-    const fromIndex = colTasks.findIndex(t => t.id === fromId);
-    const toIndex = colTasks.findIndex(t => t.id === toId);
-
-    const reordered = [...colTasks];
-    reordered.splice(fromIndex, 1);
-    reordered.splice(toIndex, 0, fromTask);
-
-    // Apply new order to full tasks list
-    const newTasks = tasks.map(t => {
-      const idx = reordered.findIndex(r => r.id === t.id);
-      if (idx !== -1) return { ...t, position: idx + 1 };
-      return t;
-    });
-
-    setTasks(newTasks);
-
-    // Debounce save to backend
-    if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(() => {
-      // Get full ordered IDs of this column in new order
-      const colIds = newTasks
-        .filter(t => t.status === fromTask.status)
-        .sort((a, b) => a.position - b.position)
-        .map(t => t.id);
-
-      api.post('/tasks/reorder', { orderedIds: colIds }).catch(() => {
-        // If save fails, reload from server
-        loadTasks();
-      });
-    }, 600);
-
-    dragTaskId.current = null;
-    dragOverTaskId.current = null;
+    draggingIdRef.current = null;
     setDraggingId(null);
-    setDragOverId(null);
+    setDragOverTaskId(null);
+    setDragOverColumn(null);
+  };
+
+  // Drag over a card
+  const handleCardDragOver = (e, taskId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverTaskId(taskId);
+    setDragOverColumn(null);
+  };
+
+  // Drag over an empty column area
+  const handleColumnDragOver = (e, colKey) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(colKey);
+    setDragOverTaskId(null);
+  };
+
+  // Drop on a card (reorder or change column)
+  const handleDropOnCard = async (e, targetTaskId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const fromId = draggingIdRef.current;
+    if (!fromId || fromId === targetTaskId) {
+      handleDragEnd();
+      return;
+    }
+
+    const fromTask = tasks.find(t => t.id === fromId);
+    const toTask = tasks.find(t => t.id === targetTaskId);
+    if (!fromTask || !toTask) { handleDragEnd(); return; }
+
+    const sameColumn = fromTask.status === toTask.status;
+
+    if (sameColumn) {
+      // Reorder within column
+      const colTasks = [...tasks.filter(t => t.status === fromTask.status)];
+      const fromIndex = colTasks.findIndex(t => t.id === fromId);
+      const toIndex = colTasks.findIndex(t => t.id === targetTaskId);
+      colTasks.splice(fromIndex, 1);
+      colTasks.splice(toIndex, 0, fromTask);
+
+      // Update local state immediately
+      const newTasks = tasks.map(t => {
+        const idx = colTasks.findIndex(c => c.id === t.id);
+        if (idx !== -1) return { ...t, position: idx + 1 };
+        return t;
+      });
+      setTasks(newTasks);
+
+      // Save to backend
+      const orderedIds = colTasks.map(t => t.id);
+      api.post('/tasks/reorder', { orderedIds }).catch(() => loadTasks());
+    } else {
+      // Move to different column — change status
+      const canMove = isAdmin || fromTask.assignee_id === user.id;
+      if (!canMove) { handleDragEnd(); return; }
+
+      // Common users can't move to Concluída or Cancelada directly
+      let newStatus = toTask.status;
+      if (!isAdmin) {
+        if (newStatus === 'Concluída') newStatus = 'Aguardando aceite';
+        if (newStatus === 'Cancelada') { handleDragEnd(); return; }
+      }
+
+      // Update local state immediately
+      setTasks(prev => prev.map(t => t.id === fromId ? { ...t, status: newStatus } : t));
+
+      // Save to backend
+      api.put(`/tasks/${fromId}`, { status: newStatus }).catch(() => loadTasks());
+    }
+
+    handleDragEnd();
+  };
+
+  // Drop on empty column
+  const handleDropOnColumn = async (e, colKey) => {
+    e.preventDefault();
+    const fromId = draggingIdRef.current;
+    if (!fromId) { handleDragEnd(); return; }
+
+    const fromTask = tasks.find(t => t.id === fromId);
+    if (!fromTask || fromTask.status === colKey) { handleDragEnd(); return; }
+
+    const canMove = isAdmin || fromTask.assignee_id === user.id;
+    if (!canMove) { handleDragEnd(); return; }
+
+    let newStatus = colKey;
+    if (!isAdmin) {
+      if (newStatus === 'Concluída') newStatus = 'Aguardando aceite';
+      if (newStatus === 'Cancelada') { handleDragEnd(); return; }
+    }
+
+    setTasks(prev => prev.map(t => t.id === fromId ? { ...t, status: newStatus } : t));
+    api.put(`/tasks/${fromId}`, { status: newStatus }).catch(() => loadTasks());
+
+    handleDragEnd();
   };
 
   return (
@@ -224,9 +258,7 @@ export default function BoardPage() {
           <div className="avatar" style={{ background: selectedUser.color, width: 26, height: 26, fontSize: 10 }}>
             {selectedUser.initials}
           </div>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>
-            Quadro de {selectedUser.name}
-          </span>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Quadro de {selectedUser.name}</span>
           <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
             — {filtered.filter(t => t.status !== 'Concluída' && t.status !== 'Cancelada').length} tarefas ativas,{' '}
             {filtered.filter(t => t.status === 'Concluída').length} concluídas
@@ -252,10 +284,10 @@ export default function BoardPage() {
           minWidth: 0, width: '100%',
         }}>
           {columns.map(col => (
-            <div key={col.key} style={{
-              flexShrink: 0, width: 280,
-              display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '100%',
-            }}>
+            <div
+              key={col.key}
+              style={{ flexShrink: 0, width: 280, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '100%' }}
+            >
               {/* Column header */}
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -275,18 +307,31 @@ export default function BoardPage() {
                 </span>
               </div>
 
-              {/* Cards */}
-              <div style={{
-                flex: 1, overflowY: 'auto',
-                display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 4
-              }}>
+              {/* Cards area — also accepts drops */}
+              <div
+                onDragOver={e => handleColumnDragOver(e, col.key)}
+                onDrop={e => handleDropOnColumn(e, col.key)}
+                style={{
+                  flex: 1, overflowY: 'auto',
+                  display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 4,
+                  borderRadius: 10,
+                  border: dragOverColumn === col.key ? `2px dashed ${col.color}` : '2px solid transparent',
+                  transition: 'border 0.15s',
+                  padding: dragOverColumn === col.key ? '6px' : '0 0 4px 0',
+                  background: dragOverColumn === col.key ? col.color + '08' : 'transparent',
+                }}
+              >
                 {col.tasks.length === 0 ? (
                   <div style={{
                     padding: '24px 12px', textAlign: 'center',
-                    color: 'var(--text-3)', fontSize: 12,
-                    border: '2px dashed var(--border)', borderRadius: 10,
+                    color: dragOverColumn === col.key ? col.color : 'var(--text-3)',
+                    fontSize: 12,
+                    border: `2px dashed ${dragOverColumn === col.key ? col.color : 'var(--border)'}`,
+                    borderRadius: 10,
+                    fontWeight: dragOverColumn === col.key ? 600 : 400,
+                    transition: 'all 0.15s',
                   }}>
-                    Arraste cards aqui
+                    {dragOverColumn === col.key ? 'Soltar aqui' : 'Arraste cards aqui'}
                   </div>
                 ) : (
                   col.tasks.map(task => (
@@ -294,30 +339,30 @@ export default function BoardPage() {
                       key={task.id}
                       draggable
                       onDragStart={e => handleDragStart(e, task.id)}
-                      onDragOver={e => handleDragOver(e, task.id)}
+                      onDragOver={e => handleCardDragOver(e, task.id)}
+                      onDrop={e => handleDropOnCard(e, task.id)}
                       onDragEnd={handleDragEnd}
                       style={{
-                        opacity: draggingId === task.id ? 0.4 : 1,
-                        transform: dragOverId === task.id && draggingId !== task.id
-                          ? 'translateY(-3px)' : 'none',
-                        transition: 'transform 0.1s, opacity 0.1s',
+                        opacity: draggingId === task.id ? 0.35 : 1,
+                        transform: dragOverTaskId === task.id && draggingId !== task.id
+                          ? 'translateY(-4px) scale(1.01)' : 'none',
+                        transition: 'transform 0.12s, opacity 0.12s',
                         cursor: 'grab',
-                        outline: dragOverId === task.id && draggingId !== task.id
-                          ? `2px solid ${col.color}` : 'none',
                         borderRadius: 10,
+                        boxShadow: dragOverTaskId === task.id && draggingId !== task.id
+                          ? `0 0 0 2px ${col.color}` : 'none',
                       }}
                     >
                       <TaskCard
                         task={task}
                         showAssignee={userFilter === 'todos'}
-                        onClick={t => setDetailId(t.id)}
+                        onClick={t => { if (!draggingId) setDetailId(t.id); }}
                       />
                     </div>
                   ))
                 )}
               </div>
 
-              {/* Add button */}
               <button
                 className="btn btn-ghost"
                 onClick={() => setShowForm(true)}
