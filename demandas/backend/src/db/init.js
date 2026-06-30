@@ -31,6 +31,7 @@ async function initDB() {
       what_to_do TEXT DEFAULT '',
       created_by INTEGER NOT NULL REFERENCES users(id),
       rejection_reason TEXT,
+      checklist JSONB DEFAULT '[]'::jsonb,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     )

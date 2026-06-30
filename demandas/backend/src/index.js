@@ -54,6 +54,7 @@ async function initDB() {
         what_to_do TEXT DEFAULT '',
         created_by INTEGER NOT NULL REFERENCES users(id),
         rejection_reason TEXT,
+        checklist JSONB DEFAULT '[]'::jsonb,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
@@ -69,6 +70,9 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+
+    // Migração: adiciona coluna checklist se não existir (bancos já criados antes dessa feature)
+    await query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '[]'::jsonb`);
 
     // Cria admin se não existir
     const admins = await query("SELECT id FROM users WHERE email = 'admin@empresa.com'");

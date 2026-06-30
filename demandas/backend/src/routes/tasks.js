@@ -53,16 +53,25 @@ router.get('/:id', authMiddleware, async (req, res) => {
 
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { title, requester, assignee_id, priority = 'Média', deadline, status = 'Pendente', description, what_to_do } = req.body;
+    const { title, requester, assignee_id, priority = 'Média', deadline, status = 'Pendente', description, what_to_do, checklist } = req.body;
     if (!title || !requester || !assignee_id) return res.status(400).json({ error: 'Título, solicitante e responsável são obrigatórios' });
 
     const finalAssignee = req.user.role === 'admin' ? assignee_id : req.user.id;
     const finalStatus = (req.user.role !== 'admin' && status === 'Concluída') ? 'Aguardando aceite' : status;
 
+    // Normaliza checklist: cada item { id, text, done }
+    const safeChecklist = Array.isArray(checklist)
+      ? checklist.map((item, i) => ({
+          id: item.id || `c${Date.now()}_${i}`,
+          text: String(item.text || '').slice(0, 300),
+          done: !!item.done
+        }))
+      : [];
+
     const result = await queryOne(`
-      INSERT INTO tasks (title, requester, assignee_id, priority, deadline, status, description, what_to_do, created_by)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id
-    `, [title, requester, finalAssignee, priority, deadline || null, finalStatus, description || '', what_to_do || '', req.user.id]);
+      INSERT INTO tasks (title, requester, assignee_id, priority, deadline, status, description, what_to_do, created_by, checklist)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id
+    `, [title, requester, finalAssignee, priority, deadline || null, finalStatus, description || '', what_to_do || '', req.user.id, JSON.stringify(safeChecklist)]);
 
     await addHistory(result.id, req.user.id, `Tarefa criada com status "${finalStatus}".`);
     res.status(201).json(await queryOne('SELECT * FROM tasks WHERE id = $1', [result.id]));
@@ -77,7 +86,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     if (!isAdmin && task.assignee_id !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
 
-    const { title, requester, assignee_id, priority, deadline, status, description, what_to_do } = req.body;
+    const { title, requester, assignee_id, priority, deadline, status, description, what_to_do, checklist } = req.body;
     let finalStatus = status || task.status;
     let rejectionReason = task.rejection_reason;
 
@@ -87,11 +96,19 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
     if (isAdmin && status && status !== task.status) rejectionReason = req.body.rejection_reason || null;
 
+    const finalChecklist = Array.isArray(checklist)
+      ? checklist.map((item, i) => ({
+          id: item.id || `c${Date.now()}_${i}`,
+          text: String(item.text || '').slice(0, 300),
+          done: !!item.done
+        }))
+      : (task.checklist || []);
+
     await query(`
       UPDATE tasks SET
         title=$1, requester=$2, assignee_id=$3, priority=$4, deadline=$5,
-        status=$6, description=$7, what_to_do=$8, rejection_reason=$9, updated_at=NOW()
-      WHERE id=$10
+        status=$6, description=$7, what_to_do=$8, rejection_reason=$9, checklist=$10, updated_at=NOW()
+      WHERE id=$11
     `, [
       isAdmin ? (title || task.title) : task.title,
       isAdmin ? (requester || task.requester) : task.requester,
@@ -102,6 +119,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
       description !== undefined ? description : task.description,
       what_to_do !== undefined ? what_to_do : task.what_to_do,
       rejectionReason,
+      JSON.stringify(finalChecklist),
       task.id
     ]);
 
@@ -115,6 +133,53 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
 
     res.json(await queryOne('SELECT * FROM tasks WHERE id = $1', [task.id]));
+  } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
+});
+
+// Atualiza o checklist inteiro (adicionar/remover itens) — só responsável ou admin
+router.put('/:id/checklist', authMiddleware, async (req, res) => {
+  try {
+    const task = await queryOne('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
+    if (!task) return res.status(404).json({ error: 'Tarefa não encontrada' });
+
+    const isAdmin = req.user.role === 'admin';
+    if (!isAdmin && task.assignee_id !== req.user.id) {
+      return res.status(403).json({ error: 'Somente o responsável pela tarefa pode editar o checklist' });
+    }
+
+    const { checklist } = req.body;
+    if (!Array.isArray(checklist)) return res.status(400).json({ error: 'Checklist inválido' });
+
+    const safeChecklist = checklist.map((item, i) => ({
+      id: item.id || `c${Date.now()}_${i}`,
+      text: String(item.text || '').slice(0, 300),
+      done: !!item.done
+    }));
+
+    await query('UPDATE tasks SET checklist=$1, updated_at=NOW() WHERE id=$2', [JSON.stringify(safeChecklist), task.id]);
+    res.json({ success: true, checklist: safeChecklist });
+  } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
+});
+
+// Marca/desmarca um item específico — só responsável ou admin
+router.patch('/:id/checklist/:itemId', authMiddleware, async (req, res) => {
+  try {
+    const task = await queryOne('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
+    if (!task) return res.status(404).json({ error: 'Tarefa não encontrada' });
+
+    const isAdmin = req.user.role === 'admin';
+    if (!isAdmin && task.assignee_id !== req.user.id) {
+      return res.status(403).json({ error: 'Somente o responsável pela tarefa pode marcar o checklist' });
+    }
+
+    const { done } = req.body;
+    const currentChecklist = task.checklist || [];
+    const updated = currentChecklist.map(item =>
+      item.id === req.params.itemId ? { ...item, done: !!done } : item
+    );
+
+    await query('UPDATE tasks SET checklist=$1, updated_at=NOW() WHERE id=$2', [JSON.stringify(updated), task.id]);
+    res.json({ success: true, checklist: updated });
   } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
 });
 

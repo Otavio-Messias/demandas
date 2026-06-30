@@ -19,6 +19,8 @@ export default function TaskForm({ task, onClose, onSave }) {
     description: task?.description || '',
     what_to_do: task?.what_to_do || '',
   });
+  const [checklist, setChecklist] = useState(task?.checklist || []);
+  const [newItem, setNewItem] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -27,6 +29,21 @@ export default function TaskForm({ task, onClose, onSave }) {
   }, []);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const addChecklistItem = () => {
+    const text = newItem.trim();
+    if (!text) return;
+    setChecklist(c => [...c, { id: `c${Date.now()}`, text, done: false }]);
+    setNewItem('');
+  };
+
+  const toggleItem = (id) => {
+    setChecklist(c => c.map(item => item.id === id ? { ...item, done: !item.done } : item));
+  };
+
+  const removeItem = (id) => {
+    setChecklist(c => c.filter(item => item.id !== id));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,10 +54,11 @@ export default function TaskForm({ task, onClose, onSave }) {
     setSaving(true);
     setError('');
     try {
+      const payload = { ...form, checklist };
       if (isEdit) {
-        await api.put(`/tasks/${task.id}`, form);
+        await api.put(`/tasks/${task.id}`, payload);
       } else {
-        await api.post('/tasks', form);
+        await api.post('/tasks', payload);
       }
       onSave();
     } catch (err) {
@@ -53,6 +71,8 @@ export default function TaskForm({ task, onClose, onSave }) {
   const availableStatuses = isAdmin
     ? STATUSES.map(s => s.key)
     : ['Pendente', 'Em andamento', 'Aguardando retorno', 'Aguardando aceite'];
+
+  const doneCount = checklist.filter(i => i.done).length;
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -149,6 +169,76 @@ export default function TaskForm({ task, onClose, onSave }) {
                 onChange={e => set('what_to_do', e.target.value)}
                 style={{ minHeight: 80 }}
               />
+            </div>
+
+            {/* Checklist */}
+            <div className="form-group">
+              <label className="form-label">
+                Checklist {checklist.length > 0 && `(${doneCount}/${checklist.length})`}
+              </label>
+
+              {checklist.length > 0 && (
+                <div style={{
+                  height: 5, background: '#f0f1f3', borderRadius: 10,
+                  overflow: 'hidden', marginBottom: 8
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${(doneCount / checklist.length) * 100}%`,
+                    background: '#10b981',
+                    transition: 'width 0.2s'
+                  }} />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                {checklist.map(item => (
+                  <div key={item.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 10px', background: 'var(--surface-2)',
+                    borderRadius: 8
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={item.done}
+                      onChange={() => toggleItem(item.id)}
+                      style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }}
+                    />
+                    <span style={{
+                      flex: 1, fontSize: 13,
+                      textDecoration: item.done ? 'line-through' : 'none',
+                      color: item.done ? 'var(--text-3)' : 'var(--text)'
+                    }}>
+                      {item.text}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.id)}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--text-3)', fontSize: 14, padding: 2, flexShrink: 0
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="form-input"
+                  placeholder="Adicionar item ao checklist..."
+                  value={newItem}
+                  onChange={e => setNewItem(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); }
+                  }}
+                />
+                <button type="button" className="btn btn-secondary btn-sm" onClick={addChecklistItem}>
+                  + Adicionar
+                </button>
+              </div>
             </div>
           </div>
 

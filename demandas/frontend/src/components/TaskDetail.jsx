@@ -59,6 +59,16 @@ export default function TaskDetail({ taskId, onClose, onUpdate }) {
     load(); onUpdate();
   };
 
+  const toggleChecklistItem = async (itemId, currentDone) => {
+    try {
+      await api.patch(`/tasks/${taskId}/checklist/${itemId}`, { done: !currentDone });
+      load(); onUpdate();
+    } catch (e) {
+      // Sem permissão ou erro - silenciosamente recarrega para refletir estado real
+      load();
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirm('Excluir esta tarefa permanentemente?')) return;
     await api.delete(`/tasks/${taskId}`);
@@ -214,6 +224,69 @@ export default function TaskDetail({ taskId, onClose, onUpdate }) {
             <div>
               <div className="form-label" style={{ marginBottom: 6 }}>O que precisa ser feito</div>
               <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{task.what_to_do}</p>
+            </div>
+          )}
+
+          {/* Checklist */}
+          {task.checklist && task.checklist.length > 0 && (
+            <div>
+              {(() => {
+                const doneCount = task.checklist.filter(i => i.done).length;
+                const total = task.checklist.length;
+                return (
+                  <>
+                    <div className="form-label" style={{ marginBottom: 6 }}>
+                      Checklist ({doneCount}/{total})
+                    </div>
+                    <div style={{
+                      height: 5, background: '#f0f1f3', borderRadius: 10,
+                      overflow: 'hidden', marginBottom: 10
+                    }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${total > 0 ? (doneCount / total) * 100 : 0}%`,
+                        background: '#10b981',
+                        transition: 'width 0.2s'
+                      }} />
+                    </div>
+                  </>
+                );
+              })()}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {task.checklist.map(item => (
+                  <label
+                    key={item.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '7px 10px', background: 'var(--surface-2)',
+                      borderRadius: 8,
+                      cursor: canEdit ? 'pointer' : 'default',
+                      opacity: canEdit ? 1 : 0.85
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={item.done}
+                      disabled={!canEdit}
+                      onChange={() => toggleChecklistItem(item.id, item.done)}
+                      style={{ width: 16, height: 16, cursor: canEdit ? 'pointer' : 'default', flexShrink: 0 }}
+                    />
+                    <span style={{
+                      flex: 1, fontSize: 13,
+                      textDecoration: item.done ? 'line-through' : 'none',
+                      color: item.done ? 'var(--text-3)' : 'var(--text)'
+                    }}>
+                      {item.text}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {!canEdit && (
+                <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 6 }}>
+                  Somente o responsável pela tarefa pode marcar os itens.
+                </p>
+              )}
             </div>
           )}
 
