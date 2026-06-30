@@ -94,6 +94,19 @@ router.post('/', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
 });
 
+router.post('/reorder', authMiddleware, async (req, res) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds deve ser um array' });
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        query('UPDATE tasks SET position=$1, updated_at=NOW() WHERE id=$2', [index + 1, id])
+      )
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
+});
+
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const task = await queryOne('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
@@ -158,22 +171,6 @@ router.put('/:id', authMiddleware, async (req, res) => {
 });
 
 // POST /api/tasks/reorder — salva nova ordem após drag and drop
-router.post('/reorder', authMiddleware, async (req, res) => {
-  try {
-    // orderedIds: array de IDs na nova ordem [ 5, 2, 8, 1, ... ]
-    const { orderedIds } = req.body;
-    if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds deve ser um array' });
-
-    // Atualiza position de cada tarefa em paralelo
-    await Promise.all(
-      orderedIds.map((id, index) =>
-        query('UPDATE tasks SET position=$1, updated_at=NOW() WHERE id=$2', [index + 1, id])
-      )
-    );
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
-});
-
 // Atualiza o checklist inteiro (adicionar/remover itens) — só responsável ou admin
 router.put('/:id/checklist', authMiddleware, async (req, res) => {
   try {
