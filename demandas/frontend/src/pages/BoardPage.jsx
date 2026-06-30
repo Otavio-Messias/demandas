@@ -84,10 +84,12 @@ export default function BoardPage() {
   // Drag over a card
   const handleCardDragOver = (e, taskId) => {
     e.preventDefault();
-    e.stopPropagation();
+    e.stopPropagation(); // impede que o dragOver da coluna também dispare
     e.dataTransfer.dropEffect = 'move';
-    setDragOverTaskId(taskId);
-    setDragOverColumn(null);
+    if (dragOverTaskId !== taskId) {
+      setDragOverTaskId(taskId);
+      setDragOverColumn(null);
+    }
   };
 
   // Drag over an empty column area
@@ -101,7 +103,7 @@ export default function BoardPage() {
   // Drop on a card (reorder or change column)
   const handleDropOnCard = async (e, targetTaskId) => {
     e.preventDefault();
-    e.stopPropagation();
+    e.stopPropagation(); // impede que o drop da coluna seja chamado também
     const fromId = draggingIdRef.current;
     if (!fromId || fromId === targetTaskId) {
       handleDragEnd();
@@ -115,40 +117,46 @@ export default function BoardPage() {
     const sameColumn = fromTask.status === toTask.status;
 
     if (sameColumn) {
-      // Reorder within column
-      const colTasks = [...tasks.filter(t => t.status === fromTask.status)];
+      // Pega todas as tarefas da coluna na ordem atual
+      const colTasks = tasks
+        .filter(t => t.status === fromTask.status)
+        .sort((a, b) => (a.position || 0) - (b.position || 0));
+
       const fromIndex = colTasks.findIndex(t => t.id === fromId);
       const toIndex = colTasks.findIndex(t => t.id === targetTaskId);
-      colTasks.splice(fromIndex, 1);
-      colTasks.splice(toIndex, 0, fromTask);
 
-      // Update local state immediately
-      const newTasks = tasks.map(t => {
-        const idx = colTasks.findIndex(c => c.id === t.id);
-        if (idx !== -1) return { ...t, position: idx + 1 };
-        return t;
+      if (fromIndex === -1 || toIndex === -1) { handleDragEnd(); return; }
+
+      const reordered = [...colTasks];
+      reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, fromTask);
+
+      // Atualiza estado local imediatamente
+      setTasks(prev => {
+        const updated = [...prev];
+        reordered.forEach((task, idx) => {
+          const i = updated.findIndex(t => t.id === task.id);
+          if (i !== -1) updated[i] = { ...updated[i], position: idx + 1 };
+        });
+        return updated;
       });
-      setTasks(newTasks);
 
-      // Save to backend
-      const orderedIds = colTasks.map(t => t.id);
+      // Salva no backend
+      const orderedIds = reordered.map(t => t.id);
       api.post('/tasks/reorder', { orderedIds }).catch(() => loadTasks());
+
     } else {
-      // Move to different column — change status
+      // Mover para outra coluna
       const canMove = isAdmin || fromTask.assignee_id === user.id;
       if (!canMove) { handleDragEnd(); return; }
 
-      // Common users can't move to Concluída or Cancelada directly
       let newStatus = toTask.status;
       if (!isAdmin) {
         if (newStatus === 'Concluída') newStatus = 'Aguardando aceite';
         if (newStatus === 'Cancelada') { handleDragEnd(); return; }
       }
 
-      // Update local state immediately
       setTasks(prev => prev.map(t => t.id === fromId ? { ...t, status: newStatus } : t));
-
-      // Save to backend
       api.put(`/tasks/${fromId}`, { status: newStatus }).catch(() => loadTasks());
     }
 
