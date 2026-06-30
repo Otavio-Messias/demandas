@@ -18,6 +18,7 @@ export default function TaskForm({ task, onClose, onSave }) {
     status: task?.status || 'Pendente',
     description: task?.description || '',
     what_to_do: task?.what_to_do || '',
+    recurrence: task?.recurrence || '',
   });
   const [checklist, setChecklist] = useState(task?.checklist || []);
   const [newItem, setNewItem] = useState('');
@@ -117,6 +118,39 @@ export default function TaskForm({ task, onClose, onSave }) {
                   onChange={e => set('deadline', e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Tarefa recorrente</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  { value: '', label: 'Não repete' },
+                  { value: 'diaria', label: 'Diária' },
+                  { value: 'semanal', label: 'Semanal' },
+                  { value: 'mensal', label: 'Mensal' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => set('recurrence', opt.value)}
+                    style={{
+                      padding: '7px 14px', fontSize: 12.5, fontWeight: 500,
+                      borderRadius: 7, cursor: 'pointer',
+                      border: form.recurrence === opt.value ? '1.5px solid #7c3aed' : '1.5px solid var(--border)',
+                      background: form.recurrence === opt.value ? '#f5f3ff' : 'white',
+                      color: form.recurrence === opt.value ? '#7c3aed' : 'var(--text-2)',
+                    }}
+                  >
+                    {opt.value && '🔁 '}{opt.label}
+                  </button>
+                ))}
+              </div>
+              {form.recurrence && (
+                <p style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 6 }}>
+                  Quando esta tarefa for aprovada como concluída, uma nova será criada automaticamente
+                  ({form.recurrence === 'diaria' ? 'no dia seguinte' : form.recurrence === 'semanal' ? 'em 7 dias' : 'no mês seguinte'}).
+                </p>
+              )}
             </div>
 
             {isAdmin && (

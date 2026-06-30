@@ -44,7 +44,10 @@ export default function TaskDetail({ taskId, onClose, onUpdate }) {
   };
 
   const handleApprove = async () => {
-    await api.post(`/tasks/${taskId}/approve`);
+    const res = await api.post(`/tasks/${taskId}/approve`);
+    if (res.data?.newTaskId) {
+      alert(`Tarefa aprovada! Como é recorrente, uma nova ocorrência (#${res.data.newTaskId}) foi criada automaticamente em "Pendente".`);
+    }
     load(); onUpdate();
   };
 
@@ -103,6 +106,14 @@ export default function TaskDetail({ taskId, onClose, onUpdate }) {
               <span className={getPriorityClass(task.priority)}>{task.priority}</span>
               {overdue && (
                 <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>⚠ Atrasada</span>
+              )}
+              {task.recurrence && (
+                <span style={{
+                  fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20,
+                  background: '#f5f3ff', color: '#7c3aed'
+                }}>
+                  🔁 {task.recurrence === 'diaria' ? 'Diária' : task.recurrence === 'semanal' ? 'Semanal' : 'Mensal'}
+                </span>
               )}
             </div>
             <h2 style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.3 }}>{task.title}</h2>

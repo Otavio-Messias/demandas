@@ -25,7 +25,10 @@ export default function TaskCard({ task, onClick, showAssignee = true }) {
 
       {/* Title row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4, flex: 1 }}>{task.title}</h3>
+        <h3 style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4, flex: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
+          {task.recurrence && <span title="Tarefa recorrente" style={{ fontSize: 11 }}>🔁</span>}
+          {task.title}
+        </h3>
         <div style={{
           width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 4,
           background: getStatus(task.status).color

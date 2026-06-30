@@ -32,6 +32,8 @@ async function initDB() {
       created_by INTEGER NOT NULL REFERENCES users(id),
       rejection_reason TEXT,
       checklist JSONB DEFAULT '[]'::jsonb,
+      recurrence TEXT,
+      recurrence_parent_id INTEGER,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     )

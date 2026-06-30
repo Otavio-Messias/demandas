@@ -11,6 +11,21 @@ async function addHistory(taskId, userId, content) {
   );
 }
 
+function calcNextDeadline(deadline, recurrence) {
+  // Se não tem prazo definido, usa hoje como base
+  const base = deadline ? new Date(deadline + 'T00:00:00') : new Date();
+  const next = new Date(base);
+
+  if (recurrence === 'diaria') next.setDate(next.getDate() + 1);
+  else if (recurrence === 'semanal') next.setDate(next.getDate() + 7);
+  else if (recurrence === 'mensal') next.setMonth(next.getMonth() + 1);
+  else return deadline || null;
+
+  return next.toISOString().slice(0, 10); // formato YYYY-MM-DD
+}
+
+const RECURRENCE_LABELS = { diaria: 'Diária', semanal: 'Semanal', mensal: 'Mensal' };
+
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
@@ -53,11 +68,12 @@ router.get('/:id', authMiddleware, async (req, res) => {
 
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { title, requester, assignee_id, priority = 'Média', deadline, status = 'Pendente', description, what_to_do, checklist } = req.body;
+    const { title, requester, assignee_id, priority = 'Média', deadline, status = 'Pendente', description, what_to_do, checklist, recurrence } = req.body;
     if (!title || !requester || !assignee_id) return res.status(400).json({ error: 'Título, solicitante e responsável são obrigatórios' });
 
     const finalAssignee = req.user.role === 'admin' ? assignee_id : req.user.id;
     const finalStatus = (req.user.role !== 'admin' && status === 'Concluída') ? 'Aguardando aceite' : status;
+    const finalRecurrence = ['diaria', 'semanal', 'mensal'].includes(recurrence) ? recurrence : null;
 
     // Normaliza checklist: cada item { id, text, done }
     const safeChecklist = Array.isArray(checklist)
@@ -69,9 +85,9 @@ router.post('/', authMiddleware, async (req, res) => {
       : [];
 
     const result = await queryOne(`
-      INSERT INTO tasks (title, requester, assignee_id, priority, deadline, status, description, what_to_do, created_by, checklist)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id
-    `, [title, requester, finalAssignee, priority, deadline || null, finalStatus, description || '', what_to_do || '', req.user.id, JSON.stringify(safeChecklist)]);
+      INSERT INTO tasks (title, requester, assignee_id, priority, deadline, status, description, what_to_do, created_by, checklist, recurrence)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id
+    `, [title, requester, finalAssignee, priority, deadline || null, finalStatus, description || '', what_to_do || '', req.user.id, JSON.stringify(safeChecklist), finalRecurrence]);
 
     await addHistory(result.id, req.user.id, `Tarefa criada com status "${finalStatus}".`);
     res.status(201).json(await queryOne('SELECT * FROM tasks WHERE id = $1', [result.id]));
@@ -86,7 +102,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     if (!isAdmin && task.assignee_id !== req.user.id) return res.status(403).json({ error: 'Sem permissão' });
 
-    const { title, requester, assignee_id, priority, deadline, status, description, what_to_do, checklist } = req.body;
+    const { title, requester, assignee_id, priority, deadline, status, description, what_to_do, checklist, recurrence } = req.body;
     let finalStatus = status || task.status;
     let rejectionReason = task.rejection_reason;
 
@@ -104,11 +120,15 @@ router.put('/:id', authMiddleware, async (req, res) => {
         }))
       : (task.checklist || []);
 
+    const finalRecurrence = recurrence !== undefined
+      ? (['diaria', 'semanal', 'mensal'].includes(recurrence) ? recurrence : null)
+      : task.recurrence;
+
     await query(`
       UPDATE tasks SET
         title=$1, requester=$2, assignee_id=$3, priority=$4, deadline=$5,
-        status=$6, description=$7, what_to_do=$8, rejection_reason=$9, checklist=$10, updated_at=NOW()
-      WHERE id=$11
+        status=$6, description=$7, what_to_do=$8, rejection_reason=$9, checklist=$10, recurrence=$11, updated_at=NOW()
+      WHERE id=$12
     `, [
       isAdmin ? (title || task.title) : task.title,
       isAdmin ? (requester || task.requester) : task.requester,
@@ -120,6 +140,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
       what_to_do !== undefined ? what_to_do : task.what_to_do,
       rejectionReason,
       JSON.stringify(finalChecklist),
+      finalRecurrence,
       task.id
     ]);
 
@@ -188,9 +209,45 @@ router.post('/:id/approve', authMiddleware, adminMiddleware, async (req, res) =>
     const task = await queryOne('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
     if (!task) return res.status(404).json({ error: 'Tarefa não encontrada' });
     if (task.status !== 'Aguardando aceite') return res.status(400).json({ error: 'Tarefa não está aguardando aceite' });
+
     await query(`UPDATE tasks SET status='Concluída', rejection_reason=NULL, updated_at=NOW() WHERE id=$1`, [task.id]);
     await addHistory(task.id, req.user.id, 'Conclusão aprovada pelo administrador. Tarefa concluída.');
-    res.json({ success: true });
+
+    let newTaskId = null;
+
+    // Se a tarefa é recorrente, cria automaticamente a próxima ocorrência
+    if (task.recurrence) {
+      const nextDeadline = calcNextDeadline(task.deadline, task.recurrence);
+
+      // Checklist da nova tarefa vem zerado (todos os itens desmarcados)
+      const resetChecklist = (task.checklist || []).map(item => ({ ...item, done: false }));
+
+      const newTask = await queryOne(`
+        INSERT INTO tasks (
+          title, requester, assignee_id, priority, deadline, status,
+          description, what_to_do, created_by, checklist, recurrence, recurrence_parent_id
+        )
+        VALUES ($1,$2,$3,$4,$5,'Pendente',$6,$7,$8,$9,$10,$11)
+        RETURNING id
+      `, [
+        task.title, task.requester, task.assignee_id, task.priority, nextDeadline,
+        task.description, task.what_to_do, task.created_by,
+        JSON.stringify(resetChecklist), task.recurrence,
+        task.recurrence_parent_id || task.id
+      ]);
+
+      newTaskId = newTask.id;
+      await addHistory(
+        newTaskId, req.user.id,
+        `Tarefa gerada automaticamente pela recorrência "${RECURRENCE_LABELS[task.recurrence]}" da tarefa #${task.id}.`
+      );
+      await addHistory(
+        task.id, req.user.id,
+        `Próxima ocorrência (#${newTaskId}) criada automaticamente para ${nextDeadline || 'sem prazo definido'}.`
+      );
+    }
+
+    res.json({ success: true, newTaskId });
   } catch (e) { res.status(500).json({ error: 'Erro interno' }); }
 });
 
