@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getStatus, getPriorityClass, formatDate, isOverdue, STATUSES, PRIORITIES } from '../utils';
+import TaskForm from './TaskForm';
 import api from '../api';
 
 export default function TaskDetail({ taskId, onClose, onUpdate }) {
@@ -106,13 +107,36 @@ export default function TaskDetail({ taskId, onClose, onUpdate }) {
             </div>
             <h2 style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.3 }}>{task.title}</h2>
           </div>
-          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
             {canEdit && (
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditing(true)} title="Editar">✏</button>
+              <button
+                onClick={() => setEditing(true)}
+                title="Editar tarefa"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', fontSize: 12, fontWeight: 600,
+                  background: '#eff6ff', color: '#2563eb',
+                  border: '1px solid #bfdbfe', borderRadius: 7,
+                  cursor: 'pointer'
+                }}
+              >
+                ✏️ Editar
+              </button>
             )}
             {isAdmin && (
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={handleDelete} title="Excluir"
-                style={{ color: '#dc2626' }}>🗑</button>
+              <button
+                onClick={handleDelete}
+                title="Excluir tarefa"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', fontSize: 12, fontWeight: 600,
+                  background: '#fef2f2', color: '#dc2626',
+                  border: '1px solid #fecaca', borderRadius: 7,
+                  cursor: 'pointer'
+                }}
+              >
+                🗑️ Excluir
+              </button>
             )}
             <button className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>✕</button>
           </div>
@@ -389,6 +413,15 @@ export default function TaskDetail({ taskId, onClose, onUpdate }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit form */}
+      {editing && (
+        <TaskForm
+          task={task}
+          onClose={() => setEditing(false)}
+          onSave={() => { setEditing(false); load(); onUpdate(); }}
+        />
       )}
     </div>
   );
